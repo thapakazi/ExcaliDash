@@ -22,6 +22,20 @@ interface ElementVersionInfo {
   versionNonce: number;
 }
 
+const haveSameElements = (a: readonly any[] = [], b: readonly any[] = []) => {
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i];
+    const right = b[i];
+    if (!left || !right) return false;
+    if (left.id !== right.id) return false;
+    if ((left.version ?? 0) !== (right.version ?? 0)) return false;
+    if ((left.versionNonce ?? 0) !== (right.versionNonce ?? 0)) return false;
+  }
+  return true;
+};
+
 // Move UIOptions outside to prevent re-creation on every render
 const UIOptions = {
   canvasActions: {
@@ -41,6 +55,7 @@ export const Editor: React.FC = () => {
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState('');
   const [initialData, setInitialData] = useState<any>(null);
+  const [isSceneLoading, setIsSceneLoading] = useState(true);
   
   const [peers, setPeers] = useState<Peer[]>([]);
   const [me] = useState(getUserIdentity());
@@ -48,9 +63,14 @@ export const Editor: React.FC = () => {
   const socketRef = useRef<Socket | null>(null);
   const lastCursorEmit = useRef<number>(0);
   const elementVersionMap = useRef<Map<string, ElementVersionInfo>>(new Map());
+  const isBootstrappingScene = useRef(true);
+  const hasHydratedInitialScene = useRef(false);
+  const isUnmounting = useRef(false);
   const isSyncing = useRef(false);
   const cursorBuffer = useRef<Map<string, any>>(new Map());
   const animationFrameId = useRef<number>(0);
+  const latestElementsRef = useRef<readonly any[]>([]);
+  const latestFilesRef = useRef<any>(null);
 
   const recordElementVersion = useCallback((element: any) => {
     elementVersionMap.current.set(element.id, {
@@ -67,6 +87,13 @@ export const Editor: React.FC = () => {
     const nextNonce = element.versionNonce ?? 0;
 
     return previous.version !== nextVersion || previous.versionNonce !== nextNonce;
+  }, []);
+
+  useEffect(() => {
+    isUnmounting.current = false;
+    return () => {
+      isUnmounting.current = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -146,6 +173,7 @@ export const Editor: React.FC = () => {
       });
       
       excalidrawAPI.current.updateScene({ elements: mergedElements });
+      latestElementsRef.current = mergedElements;
       isSyncing.current = false;
     });
 
@@ -200,16 +228,26 @@ export const Editor: React.FC = () => {
     setIsReady(true);
   }, []);
 
+  const buildEmptyScene = useCallback(() => ({
+    elements: [],
+    appState: {
+      viewBackgroundColor: '#ffffff',
+      gridSize: null,
+      collaborators: new Map(),
+    },
+    scrollToContent: true,
+  }), []);
+
   // ------------------------------------------------------------------
   // 1. STABLE SAVE LOGIC (The Fix)
   // We use a Ref to hold the save function so the debounce wrapper
   // doesn't need to be recreated on every render.
   // ------------------------------------------------------------------
-  const saveDataRef = useRef<(elements: any, appState: any) => Promise<void>>(null);
-  const savePreviewRef = useRef<(elements: any, appState: any, files: any) => Promise<void>>(null);
+  const saveDataRef = useRef<((elements: readonly any[], appState: any) => Promise<void>) | null>(null);
+  const savePreviewRef = useRef<((elements: readonly any[], appState: any, files: any) => Promise<void>) | null>(null);
 
   // Update the ref on every render to ensure it has access to the latest props/state
-  saveDataRef.current = async (elements, appState) => {
+  saveDataRef.current = async (elements: readonly any[], appState: any) => {
     if (!id) return;
     
     try {
@@ -217,34 +255,56 @@ export const Editor: React.FC = () => {
         viewBackgroundColor: appState.viewBackgroundColor,
         gridSize: appState.gridSize,
       };
-      
-      await api.updateDrawing(id, {
-        elements,
+
+      const snapshot = latestElementsRef.current ?? elements;
+      const persistableElements = Array.from(snapshot);
+
+      console.log("[Editor] Saving drawing", {
+        drawingId: id,
+        elementCount: persistableElements.length,
+        hasRenderableElements: persistableElements.some((el: any) => !el?.isDeleted),
         appState: persistableAppState,
       });
+
+      await api.updateDrawing(id, {
+        elements: persistableElements,
+        appState: persistableAppState,
+      });
+
+      console.log("[Editor] Save complete", { drawingId: id });
     } catch (err) {
       console.error('Failed to save drawing', err);
       toast.error("Failed to save changes");
     }
   };
 
-  savePreviewRef.current = async (elements, appState, files) => {
+  savePreviewRef.current = async (elements: readonly any[], appState: any, files: any) => {
     if (!id) return;
 
     try {
+      const currentSnapshot = latestElementsRef.current ?? elements;
+      const currentFiles = latestFilesRef.current ?? files;
+
       // Generate preview
       const svg = await exportToSvg({
-        elements,
+        elements: currentSnapshot,
         appState: {
           ...appState,
           exportBackground: true,
           viewBackgroundColor: appState.viewBackgroundColor || '#ffffff',
         },
-        files,
+        files: currentFiles,
       });
       const preview = svg.outerHTML;
 
+      console.log("[Editor] Saving preview", {
+        drawingId: id,
+        elementCount: currentSnapshot.length,
+      });
+
       await api.updateDrawing(id, { preview });
+
+      console.log("[Editor] Preview save complete", { drawingId: id });
     } catch (err) {
       console.error('Failed to save preview', err);
     }
@@ -298,33 +358,57 @@ export const Editor: React.FC = () => {
   // 2. DATA LOADING
   // ------------------------------------------------------------------
   useEffect(() => {
+    isBootstrappingScene.current = true;
+    hasHydratedInitialScene.current = false;
+    elementVersionMap.current.clear();
+    latestElementsRef.current = [];
+    latestFilesRef.current = null;
+    excalidrawAPI.current = null;
+    setIsReady(false);
+    setIsSceneLoading(true);
+    setInitialData(null);
+
     const loadData = async () => {
-      if (!id) return;
+      if (!id) {
+        setInitialData(buildEmptyScene());
+        setIsSceneLoading(false);
+        return;
+      }
       try {
         const data = await api.getDrawing(id);
         setDrawingName(data.name);
         
         const elements = convertToExcalidrawElements(data.elements || []);
+        latestElementsRef.current = elements;
+        latestFilesRef.current = null;
         
-        // Initialize version tracking with loaded data
         elements.forEach((el: any) => {
           recordElementVersion(el);
         });
 
+        const persistedAppState = data.appState || {};
+        const hydratedAppState = {
+          ...persistedAppState,
+          viewBackgroundColor: persistedAppState.viewBackgroundColor ?? '#ffffff',
+          gridSize: persistedAppState.gridSize ?? null,
+          collaborators: new Map(),
+        };
+
         setInitialData({
           elements,
-          appState: {
-            ...data.appState,
-            collaborators: new Map(),
-          },
+          appState: hydratedAppState,
           scrollToContent: true,
         });
       } catch (err) {
         console.error('Failed to load drawing', err);
+        toast.error("Failed to load drawing");
+        setInitialData(buildEmptyScene());
+      } finally {
+        setIsSceneLoading(false);
       }
     };
     loadData();
-  }, [id, recordElementVersion]);
+  }, [id, recordElementVersion, buildEmptyScene]);
 
   // ------------------------------------------------------------------
   // 3. HANDLERS
@@ -336,9 +420,11 @@ export const Editor: React.FC = () => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (excalidrawAPI.current && saveDataRef.current && savePreviewRef.current) {
-          const elements = excalidrawAPI.current.getSceneElements();
+          const elements = excalidrawAPI.current.getSceneElementsIncludingDeleted();
           const appState = excalidrawAPI.current.getAppState();
           const files = excalidrawAPI.current.getFiles() || null;
+          latestElementsRef.current = elements;
+          latestFilesRef.current = files;
           // Call save immediately, bypassing debounce
           await saveDataRef.current(elements, appState);
           // Also update preview
@@ -352,6 +438,11 @@ export const Editor: React.FC = () => {
   }, []);
 
   const handleCanvasChange = useCallback((elements: readonly any[], appState: any) => {
+    if (isUnmounting.current) {
+      console.log("[Editor] Ignoring change during unmount", { drawingId: id });
+      return;
+    }
+
     // 4. STOP THE ECHO
     // If this change was caused by a socket update, do NOT broadcast it back
     if (isSyncing.current) return;
@@ -361,14 +452,54 @@ export const Editor: React.FC = () => {
       ? excalidrawAPI.current.getSceneElementsIncludingDeleted() 
       : elements;
 
+    if (!hasHydratedInitialScene.current) {
+      const matchesInitialSnapshot = haveSameElements(allElements, latestElementsRef.current);
+      hasHydratedInitialScene.current = true;
+      isBootstrappingScene.current = false;
+
+      if (matchesInitialSnapshot) {
+        console.log("[Editor] Skipping hydration change", {
+          drawingId: id,
+          elementCount: allElements.length,
+        });
+        return;
+      }
+
+      console.log("[Editor] First live change after hydration", {
+        drawingId: id,
+        elementCount: allElements.length,
+      });
+    }
+
+    latestElementsRef.current = allElements;
+
+    const hasRenderableElements = allElements.some((el: any) => !el?.isDeleted);
+    if (isBootstrappingScene.current && !hasRenderableElements) {
+      console.log("[Editor] Bootstrapping guard active", {
+        drawingId: id,
+        elementCount: allElements.length,
+      });
+      return;
+    }
+
     // Trigger Sync (Throttled)
     broadcastChanges(allElements);
 
     // Trigger Fast Save
+    console.log("[Editor] Queueing save", {
+      drawingId: id,
+      elementCount: allElements.length,
+      hasRenderableElements,
+    });
     debouncedSave(allElements, appState);
 
     // Trigger Slow Preview Gen
     const files = excalidrawAPI.current?.getFiles() || null;
+    latestFilesRef.current = files;
+    console.log("[Editor] Queueing preview save", {
+      drawingId: id,
+      fileCount: files ? Object.keys(files).length : 0,
+    });
     debouncedSavePreview(allElements, appState, files);
   }, [debouncedSave, debouncedSavePreview, broadcastChanges]);
 
@@ -456,14 +587,23 @@ export const Editor: React.FC = () => {
       </header>
 
       <div className="flex-1 w-full relative" style={{ height: 'calc(100vh - 3.5rem)' }}>
-        <Excalidraw
-          theme={theme === 'dark' ? 'dark' : 'light'}
-          initialData={initialData}
-          onChange={handleCanvasChange}
-          onPointerUpdate={onPointerUpdate}
-          excalidrawAPI={setExcalidrawAPI}
-          UIOptions={UIOptions}
-        />
+        {initialData ? (
+          <Excalidraw
+            key={id}
+            theme={theme === 'dark' ? 'dark' : 'light'}
+            initialData={initialData}
+            onChange={handleCanvasChange}
+            onPointerUpdate={onPointerUpdate}
+            excalidrawAPI={setExcalidrawAPI}
+            UIOptions={UIOptions}
+          />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-500 dark:text-gray-400">
+            <span className="text-sm font-medium">
+              {isSceneLoading ? 'Loading drawing...' : 'Preparing canvas...'}
+            </span>
+          </div>
+        )}
         <Toaster position="bottom-center" />
       </div>
     </div>

@@ -15,7 +15,7 @@ export const reconcileElements = (
   const getVersionNonce = (element: any) => element?.versionNonce ?? 0;
   const getUpdated = (element: any) => {
     const value = element?.updated;
-    return typeof value === 'number' ? value : Number(value) || 0;
+    return typeof value === "number" ? value : Number(value) || 0;
   };
 
   remoteElements.forEach((remoteEl) => {

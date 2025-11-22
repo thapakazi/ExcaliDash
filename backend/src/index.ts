@@ -148,11 +148,25 @@ app.get("/drawings", async (req, res) => {
 app.get("/drawings/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    console.log("[API] Fetching drawing", { id });
     const drawing = await prisma.drawing.findUnique({ where: { id } });
 
     if (!drawing) {
+      console.warn("[API] Drawing not found", { id });
       return res.status(404).json({ error: "Drawing not found" });
     }
+
+    console.log("[API] Returning drawing", {
+      id,
+      elementCount: (() => {
+        try {
+          const parsed = JSON.parse(drawing.elements);
+          return Array.isArray(parsed) ? parsed.length : null;
+        } catch (_err) {
+          return null;
+        }
+      })(),
+    });
 
     res.json({
       ...drawing,
@@ -195,6 +209,15 @@ app.put("/drawings/:id", async (req, res) => {
     const { id } = req.params;
     const { name, elements, appState, collectionId, preview } = req.body;
 
+    console.log("[API] Updating drawing", {
+      id,
+      hasElements: elements !== undefined,
+      elementCount:
+        elements && Array.isArray(elements) ? elements.length : undefined,
+      hasAppState: appState !== undefined,
+      hasPreview: preview !== undefined,
+    });
+
     const data: any = {
       version: { increment: 1 },
     };
@@ -208,6 +231,18 @@ app.put("/drawings/:id", async (req, res) => {
     const updatedDrawing = await prisma.drawing.update({
       where: { id },
       data,
+    });
+
+    console.log("[API] Update complete", {
+      id,
+      storedElementCount: (() => {
+        try {
+          const parsed = JSON.parse(updatedDrawing.elements);
+          return Array.isArray(parsed) ? parsed.length : null;
+        } catch (_err) {
+          return null;
+        }
+      })(),
     });
 
     res.json({
