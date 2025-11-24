@@ -84,3 +84,15 @@ export const deleteCollection = async (id: string) => {
   const response = await api.delete<{ success: true }>(`/collections/${id}`);
   return response.data;
 };
+
+// --- Library ---
+
+export const getLibrary = async () => {
+  const response = await api.get<{ items: any[] }>("/library");
+  return response.data.items;
+};
+
+export const updateLibrary = async (items: any[]) => {
+  const response = await api.put<{ items: any[] }>("/library", { items });
+  return response.data.items;
+};

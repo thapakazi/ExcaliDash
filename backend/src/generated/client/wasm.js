@@ -139,6 +139,13 @@ exports.Prisma.DrawingScalarFieldEnum = {
   updatedAt: 'updatedAt'
 };
 
+exports.Prisma.LibraryScalarFieldEnum = {
+  id: 'id',
+  items: 'items',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -152,7 +159,8 @@ exports.Prisma.NullsOrder = {
 
 exports.Prisma.ModelName = {
   Collection: 'Collection',
-  Drawing: 'Drawing'
+  Drawing: 'Drawing',
+  Library: 'Library'
 };
 
 /**

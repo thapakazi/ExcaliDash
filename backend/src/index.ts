@@ -801,6 +801,58 @@ app.delete("/collections/:id", async (req, res) => {
   }
 });
 
+// --- Library ---
+
+// GET /library - Fetch stored library items
+app.get("/library", async (req, res) => {
+  try {
+    const library = await prisma.library.findUnique({
+      where: { id: "default" },
+    });
+
+    if (!library) {
+      // Return empty array if no library exists yet
+      return res.json({ items: [] });
+    }
+
+    res.json({
+      items: JSON.parse(library.items),
+    });
+  } catch (error) {
+    console.error("Failed to fetch library:", error);
+    res.status(500).json({ error: "Failed to fetch library" });
+  }
+});
+
+// PUT /library - Update/create library items
+app.put("/library", async (req, res) => {
+  try {
+    const { items } = req.body;
+
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: "Items must be an array" });
+    }
+
+    const library = await prisma.library.upsert({
+      where: { id: "default" },
+      update: {
+        items: JSON.stringify(items),
+      },
+      create: {
+        id: "default",
+        items: JSON.stringify(items),
+      },
+    });
+
+    res.json({
+      items: JSON.parse(library.items),
+    });
+  } catch (error) {
+    console.error("Failed to update library:", error);
+    res.status(500).json({ error: "Failed to update library" });
+  }
+});
+
 // --- Export/Import Endpoints ---
 
 // GET /export - Export SQLite database (supports .sqlite and .db extensions)

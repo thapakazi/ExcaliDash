@@ -33,3 +33,10 @@ model Drawing {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 }
+
+model Library {
+  id        String   @id @default("default") // Singleton pattern - use "default" ID
+  items     String   @default("[]") // Stored as JSON string array of library items
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

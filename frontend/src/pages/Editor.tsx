@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 import { Excalidraw, exportToSvg } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import debounce from 'lodash/debounce';
@@ -9,6 +9,7 @@ import { Toaster, toast } from 'sonner';
 import { io, Socket } from 'socket.io-client';
 import { getUserIdentity } from '../utils/identity';
 import { reconcileElements } from '../utils/sync';
+import { exportFromEditor } from '../utils/exportUtils';
 import type { UserIdentity } from '../utils/identity';
 import * as api from '../api';
 import { useTheme } from '../context/ThemeContext';
@@ -241,6 +242,59 @@ export const Editor: React.FC = () => {
     setIsReady(true);
   }, []);
 
+  // Handle #addLibrary URL hash parameter for importing libraries from links
+  useEffect(() => {
+    if (!isReady || !excalidrawAPI.current) return;
+
+    const hash = window.location.hash;
+    if (!hash.includes('addLibrary=')) return;
+
+    const params = new URLSearchParams(hash.slice(1)); // Remove the leading #
+    const libraryUrl = params.get('addLibrary');
+    
+    if (!libraryUrl) return;
+
+    const importLibraryFromUrl = async () => {
+      try {
+        console.log('[Editor] Importing library from URL:', libraryUrl);
+        toast.loading('Importing library...', { id: 'library-import' });
+
+        const response = await fetch(libraryUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch library: ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+        
+        // Use Excalidraw's updateLibrary API with proper settings:
+        // - defaultStatus: "published" puts items in "Excalidraw library" section
+        // - merge: true preserves existing library items
+        // - openLibraryMenu: true shows the library sidebar after import
+        await excalidrawAPI.current.updateLibrary({
+          libraryItems: blob,
+          merge: true,
+          defaultStatus: "published",
+          openLibraryMenu: true,
+        });
+
+        // Get the updated library items and persist to server
+        const updatedItems = excalidrawAPI.current.getAppState().libraryItems || [];
+        await api.updateLibrary([...updatedItems]);
+
+        toast.success('Library imported successfully', { id: 'library-import' });
+        console.log('[Editor] Library import complete');
+
+        // Clear the hash to prevent re-importing on refresh
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      } catch (err) {
+        console.error('[Editor] Failed to import library:', err);
+        toast.error('Failed to import library', { id: 'library-import' });
+      }
+    };
+
+    importLibraryFromUrl();
+  }, [isReady]);
+
   const buildEmptyScene = useCallback(() => ({
     elements: [],
     appState: {
@@ -259,6 +313,7 @@ export const Editor: React.FC = () => {
   // ------------------------------------------------------------------
   const saveDataRef = useRef<((elements: readonly any[], appState: any) => Promise<void>) | null>(null);
   const savePreviewRef = useRef<((elements: readonly any[], appState: any, files: any) => Promise<void>) | null>(null);
+  const saveLibraryRef = useRef<((items: any[]) => Promise<void>) | null>(null);
 
   // Update the ref on every render to ensure it has access to the latest props/state
   saveDataRef.current = async (elements: readonly any[], appState: any) => {
@@ -326,6 +381,17 @@ export const Editor: React.FC = () => {
     }
   };
 
+  saveLibraryRef.current = async (items: any[]) => {
+    try {
+      console.log("[Editor] Saving library", { itemCount: items.length });
+      await api.updateLibrary(items);
+      console.log("[Editor] Library save complete");
+    } catch (err) {
+      console.error('Failed to save library', err);
+      toast.error("Failed to save library");
+    }
+  };
+
   // Create the debounced function ONLY ONCE.
   // It simply calls whatever is currently in saveDataRef.current
   const debouncedSave = useCallback(
@@ -343,6 +409,15 @@ export const Editor: React.FC = () => {
         savePreviewRef.current(elements, appState, files);
       }
     }, 10000),
+    []
+  );
+
+  const debouncedSaveLibrary = useCallback(
+    debounce((items: any[]) => {
+      if (saveLibraryRef.current) {
+        saveLibraryRef.current(items);
+      }
+    }, 1000),
     []
   );
 
@@ -391,7 +466,14 @@ export const Editor: React.FC = () => {
         return;
       }
       try {
-        const data = await api.getDrawing(id);
+        // Fetch drawing and library in parallel
+        const [data, libraryItems] = await Promise.all([
+          api.getDrawing(id),
+          api.getLibrary().catch((err) => {
+            console.warn('Failed to load library, using empty:', err);
+            return [];
+          })
+        ]);
         setDrawingName(data.name);
         
         // Use elements directly without converting - they're already normalized during import
@@ -417,6 +499,7 @@ export const Editor: React.FC = () => {
           appState: hydratedAppState,
           files,
           scrollToContent: true,
+          libraryItems,
         });
       } catch (err) {
         console.error('Failed to load drawing', err);
@@ -537,6 +620,12 @@ export const Editor: React.FC = () => {
     }
   };
 
+  // Handle library changes and persist to server
+  const handleLibraryChange = useCallback((items: readonly any[]) => {
+    console.log("[Editor] Library changed", { itemCount: items.length });
+    debouncedSaveLibrary([...items]);
+  }, [debouncedSaveLibrary]);
+
   // Disable native Excalidraw save dialogs
   // UIOptions is now defined outside the component
 
@@ -594,6 +683,25 @@ export const Editor: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-3">
+          {/* Download Button */}
+          <button
+            onClick={() => {
+              if (excalidrawAPI.current) {
+                const elements = excalidrawAPI.current.getSceneElementsIncludingDeleted();
+                const appState = excalidrawAPI.current.getAppState();
+                const files = excalidrawAPI.current.getFiles() || {};
+                exportFromEditor(drawingName, elements, appState, files);
+                toast.success('Drawing exported');
+              }
+            }}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+            title="Export drawing"
+          >
+            <Download size={20} />
+          </button>
+
+          <div className="h-6 w-px bg-gray-300 dark:bg-gray-700" />
+
           <div className="flex items-center">
             <div className="relative group">
               <div 
@@ -639,6 +747,7 @@ export const Editor: React.FC = () => {
             initialData={initialData}
             onChange={handleCanvasChange}
             onPointerUpdate={onPointerUpdate}
+            onLibraryChange={handleLibraryChange}
             excalidrawAPI={setExcalidrawAPI}
             UIOptions={UIOptions}
           />
