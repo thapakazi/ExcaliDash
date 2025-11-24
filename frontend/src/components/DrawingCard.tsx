@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { PenTool, Trash2, FolderInput, ArrowRight, Check, Clock, Copy } from 'lucide-react';
+import { PenTool, Trash2, FolderInput, ArrowRight, Check, Clock, Copy, Download } from 'lucide-react';
 import type { Drawing, Collection } from '../types';
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
 import { exportToSvg } from "@excalidraw/excalidraw";
+import { exportDrawingToFile } from '../utils/exportUtils';
 
 import * as api from '../api';
 
@@ -323,6 +324,16 @@ export const DrawingCard: React.FC<DrawingCardProps> = ({
                 className="w-full px-3 py-2 text-sm text-left text-slate-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white flex items-center gap-2"
               >
                 <Copy size={14} /> Duplicate
+              </button>
+
+              <button
+                onClick={() => {
+                  exportDrawingToFile(drawing);
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-2 text-sm text-left text-slate-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white flex items-center gap-2"
+              >
+                <Download size={14} /> Export
               </button>
 
               <div className="border-t border-slate-50 dark:border-slate-700 my-1"></div>

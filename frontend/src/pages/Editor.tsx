@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 import { Excalidraw, exportToSvg } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import debounce from 'lodash/debounce';
@@ -9,6 +9,7 @@ import { Toaster, toast } from 'sonner';
 import { io, Socket } from 'socket.io-client';
 import { getUserIdentity } from '../utils/identity';
 import { reconcileElements } from '../utils/sync';
+import { exportFromEditor } from '../utils/exportUtils';
 import type { UserIdentity } from '../utils/identity';
 import * as api from '../api';
 import { useTheme } from '../context/ThemeContext';
@@ -682,6 +683,25 @@ export const Editor: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-3">
+          {/* Download Button */}
+          <button
+            onClick={() => {
+              if (excalidrawAPI.current) {
+                const elements = excalidrawAPI.current.getSceneElementsIncludingDeleted();
+                const appState = excalidrawAPI.current.getAppState();
+                const files = excalidrawAPI.current.getFiles() || {};
+                exportFromEditor(drawingName, elements, appState, files);
+                toast.success('Drawing exported');
+              }
+            }}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+            title="Export drawing"
+          >
+            <Download size={20} />
+          </button>
+
+          <div className="h-6 w-px bg-gray-300 dark:bg-gray-700" />
+
           <div className="flex items-center">
             <div className="relative group">
               <div 
