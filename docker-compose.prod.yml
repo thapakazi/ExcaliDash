@@ -47,9 +47,28 @@ services:
       timeout: 10s
       retries: 3
 
+  backup-cron:
+    build:
+      context: ./cron-backup
+    container_name: excalidash-backup-cron
+    environment:
+      - GITHUB_OAUTH_TOKEN=${GITHUB_OAUTH_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO}
+      - BACKUP_ENDPOINT=${BACKUP_ENDPOINT:-http://frontend:80/api/export/json}
+      - DB_BACKUP_ENDPOINT=${DB_BACKUP_ENDPOINT:-http://frontend:80/api/export}
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-*/5 * * * *}
+    depends_on:
+      - frontend
+    networks:
+      - excalidash-network
+    volumes:
+      - backup-cron-data:/var/log
+    restart: unless-stopped
+
 networks:
   excalidash-network:
     driver: bridge
 
 volumes:
   backend-data:
+  backup-cron-data:
