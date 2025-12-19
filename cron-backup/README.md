@@ -11,6 +11,7 @@ Optional:
 
 - `BACKUP_ENDPOINT` - the URL to hit to get the JSON backup file (default: `http://frontend:80/api/export/json`).
 - `DB_BACKUP_ENDPOINT` - the URL to hit to get the database `.db` file (default: `http://frontend:80/api/export`). This defaults to the `frontend` service inside the same Docker network.
+- `BACKUP_TAG` - optional tag to include in the commit message and logs (example: `prod-us-east-1` or `backup-node-1`). Useful to identify the machine or environment that created the backup.
 - `CRON_SCHEDULE` - cron schedule for backups (default: `*/5 * * * *` for testing). Change to `0 2 * * *` for daily at 02:00.
 
 Testing locally:

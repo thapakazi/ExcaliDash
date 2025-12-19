@@ -14,6 +14,12 @@ LOGFILE="${LOGFILE:-/var/log/backup-cron.log}"
 mkdir -p "$(dirname "$LOGFILE")" || true
 : "${LOGFILE}" >/dev/null 2>&1 || touch "$LOGFILE" || true
 
+# Optional tag to identify the machine or instance running this job
+# Example: "prod-us-east-1" or "my-laptop"
+BACKUP_TAG="${BACKUP_TAG:-}"
+# Sanitize tag for use in commit messages and filenames (replace unsafe chars with '-')
+BACKUP_TAG_SAFE="$(printf '%s' "$BACKUP_TAG" | tr -d '\n' | sed 's/[^[:alnum:]._-]/-/g')"
+
 backup() {
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   tmp="/tmp/backup-$timestamp.zip"
@@ -67,9 +73,15 @@ backup() {
         return 0
       fi
 
-      if git -C "$repo_tmp" commit -m "Automated backup $timestamp" >/dev/null 2>&1; then
+      # Build a commit message including an optional tag
+      commit_msg="Automated backup $timestamp"
+      if [ -n "$BACKUP_TAG_SAFE" ]; then
+        commit_msg="$commit_msg [tag: $BACKUP_TAG_SAFE]"
+      fi
+
+      if git -C "$repo_tmp" commit -m "$commit_msg" >/dev/null 2>&1; then
         if git -C "$repo_tmp" push "$GIT_URL" HEAD >/tmp/git_push_output 2>&1; then
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Committed and pushed backups for $timestamp to $GITHUB_REPO" >> "$LOGFILE"
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Committed and pushed backups for $timestamp to $GITHUB_REPO (tag: $BACKUP_TAG_SAFE)" >> "$LOGFILE"
           rm -rf "$repo_tmp" "$tmp" "$tmp_db"
           return 0
         else

@@ -56,6 +56,7 @@ services:
       - GITHUB_REPO=${GITHUB_REPO}
       - BACKUP_ENDPOINT=${BACKUP_ENDPOINT:-http://frontend:80/api/export/json}
       - DB_BACKUP_ENDPOINT=${DB_BACKUP_ENDPOINT:-http://frontend:80/api/export}
+      - BACKUP_TAG=${BACKUP_TAG:-}
       - CRON_SCHEDULE=${CRON_SCHEDULE:-*/5 * * * *}
     depends_on:
       - frontend
