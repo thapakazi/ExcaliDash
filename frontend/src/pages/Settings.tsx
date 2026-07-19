@@ -1,303 +1,374 @@
-import React, { useEffect, useState } from 'react';
-import { Layout } from '../components/Layout';
-import { useNavigate } from 'react-router-dom';
-import * as api from '../api';
-import type { Collection } from '../types';
-import { Database, FileJson, Upload, Moon, Sun, Info, HardDrive } from 'lucide-react';
-import { ConfirmModal } from '../components/ConfirmModal';
-import { importDrawings } from '../utils/importUtils';
-import { useTheme } from '../context/ThemeContext';
-
+import React, { useEffect, useState } from "react";
+import { Layout } from "../components/Layout";
+import { useNavigate } from "react-router-dom";
+import * as api from "../api";
+import type { Collection } from "../types";
+import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
+import { SettingsMainGrid } from "./settings/SettingsMainGrid";
+import { AdvancedSettings } from "./settings/AdvancedSettings";
+import { SettingsConfirmModals } from "./settings/SettingsConfirmModals";
+import { displayFontFamily } from "../utils/displayFont";
 export const Settings: React.FC = () => {
-    const [collections, setCollections] = useState<Collection[]>([]);
-    const navigate = useNavigate();
-    const { theme, toggleTheme } = useTheme();
-
-    // Import state
-    const [importConfirmation, setImportConfirmation] = useState<{ isOpen: boolean; file: File | null }>({ isOpen: false, file: null });
-    const [importError, setImportError] = useState<{ isOpen: boolean; message: string }>({ isOpen: false, message: '' });
-    const [importSuccess, setImportSuccess] = useState(false);
-
-    const appVersion = import.meta.env.VITE_APP_VERSION || 'Unknown version';
-    const buildLabel = import.meta.env.VITE_APP_BUILD_LABEL;
-
-    useEffect(() => {
-        const fetchCollections = async () => {
-            try {
-                const data = await api.getCollections();
-                setCollections(data);
-            } catch (err) {
-                console.error('Failed to fetch collections:', err);
-            }
-        };
-        fetchCollections();
-    }, []);
-
-    const handleCreateCollection = async (name: string) => {
-        await api.createCollection(name);
-        const newCollections = await api.getCollections();
-        setCollections(newCollections);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
+  const { authEnabled, user, authMode } = useAuth();
+  const [legacyDbImportConfirmation, setLegacyDbImportConfirmation] = useState<{
+    isOpen: boolean;
+    file: File | null;
+    info: null | {
+      drawings: number;
+      collections: number;
+      legacyLatestMigration: string | null;
+      currentLatestMigration: string | null;
     };
-
-    const handleEditCollection = async (id: string, name: string) => {
-        setCollections(prev => prev.map(c => c.id === id ? { ...c, name } : c));
-        await api.updateCollection(id, name);
+  }>({ isOpen: false, file: null, info: null });
+  const [importError, setImportError] = useState<{
+    isOpen: boolean;
+    message: string;
+  }>({ isOpen: false, message: "" });
+  const [importSuccess, setImportSuccess] = useState<{
+    isOpen: boolean;
+    message: React.ReactNode;
+  }>({ isOpen: false, message: "" });
+  const [legacyDbImportLoading, setLegacyDbImportLoading] = useState(false);
+  const [authToggleLoading, setAuthToggleLoading] = useState(false);
+  const [authToggleError, setAuthToggleError] = useState<string | null>(null);
+  const [authToggleConfirm, setAuthToggleConfirm] = useState<{
+    isOpen: boolean;
+    nextEnabled: boolean | null;
+  }>({ isOpen: false, nextEnabled: null });
+  const [authDisableFinalConfirmOpen, setAuthDisableFinalConfirmOpen] =
+    useState(false);
+  const [backupExportExt, setBackupExportExt] = useState<
+    "excalidash" | "excalidash.zip"
+  >("excalidash");
+  const [backupImportConfirmation, setBackupImportConfirmation] = useState<{
+    isOpen: boolean;
+    file: File | null;
+    info: null | {
+      formatVersion: number;
+      exportedAt: string;
+      excalidashBackendVersion: string | null;
+      collections: number;
+      drawings: number;
     };
-
-    const handleDeleteCollection = async (id: string) => {
-        setCollections(prev => prev.filter(c => c.id !== id));
-        await api.deleteCollection(id);
+  }>({ isOpen: false, file: null, info: null });
+  const [backupImportLoading, setBackupImportLoading] = useState(false);
+  const [backupImportSuccess, setBackupImportSuccess] = useState(false);
+  const [backupImportError, setBackupImportError] = useState<{
+    isOpen: boolean;
+    message: string;
+  }>({ isOpen: false, message: "" });
+  const appVersion = import.meta.env.VITE_APP_VERSION || "Unknown version";
+  const buildLabel = import.meta.env.VITE_APP_BUILD_LABEL;
+  const isManagedAuthMode = authMode !== "local";
+  const UPDATE_CHANNEL_KEY = "excalidash-update-channel";
+  const UPDATE_INFO_KEY = "excalidash-update-info";
+  const [updateChannel, setUpdateChannel] = useState<api.UpdateChannel>(() => {
+    const raw =
+      typeof window === "undefined"
+        ? null
+        : (window.localStorage?.getItem?.(UPDATE_CHANNEL_KEY) ?? null);
+    return raw === "prerelease" ? "prerelease" : "stable";
+  });
+  const [updateInfo, setUpdateInfo] = useState<api.UpdateInfo | null>(null);
+  const [updateLoading, setUpdateLoading] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  useEffect(() => {
+    const fetchCollections = async () => {
+      try {
+        const data = await api.getCollections();
+        setCollections(data);
+      } catch (err) {
+        console.error("Failed to fetch collections:", err);
+      }
     };
-
-    const handleSelectCollection = (id: string | null | undefined) => {
-        // Navigate to dashboard with selected collection
-        if (id === undefined) navigate('/');
-        else if (id === null) navigate('/collections?id=unorganized');
-        else navigate(`/collections?id=${id}`);
-    };
-
-
-
-    return (
-        <Layout
-            collections={collections}
-            selectedCollectionId="SETTINGS" // Special ID to highlight Settings in Sidebar if we add logic for it
-            onSelectCollection={handleSelectCollection}
-            onCreateCollection={handleCreateCollection}
-            onEditCollection={handleEditCollection}
-            onDeleteCollection={handleDeleteCollection}
-        >
-            <h1 className="text-5xl mb-8 text-slate-900 dark:text-white pl-1" style={{ fontFamily: 'Excalifont' }}>
-                Settings
-            </h1>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Theme Toggle */}
-                <button
-                    onClick={toggleTheme}
-                    className="flex flex-col items-center justify-center gap-4 p-8 bg-white dark:bg-neutral-900 border-2 border-black dark:border-neutral-700 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[6px_6px_0px_0px_rgba(255,255,255,0.2)] hover:-translate-y-1 transition-all duration-200 group"
-                >
-                    <div className="w-16 h-16 bg-amber-50 dark:bg-neutral-800 rounded-2xl flex items-center justify-center border-2 border-amber-100 dark:border-neutral-700 group-hover:border-amber-200 dark:group-hover:border-neutral-600 transition-colors">
-                        {theme === 'light' ? (
-                            <Moon size={32} className="text-amber-600 dark:text-amber-400" />
-                        ) : (
-                            <Sun size={32} className="text-amber-600 dark:text-amber-400" />
-                        )}
-                    </div>
-                    <div className="text-center">
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">
-                            {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
-                        </h3>
-                        <p className="text-sm text-slate-500 dark:text-neutral-400 font-medium">
-                            Switch to {theme === 'light' ? 'dark' : 'light'} theme
-                        </p>
-                    </div>
-                </button>
-
-                {/* Export SQLite (.sqlite) */}
-                <button
-                    onClick={() => window.location.href = `${api.API_URL}/export`}
-                    className="flex flex-col items-center justify-center gap-4 p-8 bg-white dark:bg-neutral-900 border-2 border-black dark:border-neutral-700 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[6px_6px_0px_0px_rgba(255,255,255,0.2)] hover:-translate-y-1 transition-all duration-200 group"
-                >
-                    <div className="w-16 h-16 bg-indigo-50 dark:bg-neutral-800 rounded-2xl flex items-center justify-center border-2 border-indigo-100 dark:border-neutral-700 group-hover:border-indigo-200 dark:group-hover:border-neutral-600 transition-colors">
-                        <Database size={32} className="text-indigo-600 dark:text-indigo-400" />
-                    </div>
-                    <div className="text-center">
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Export Data (.sqlite)</h3>
-                        <p className="text-sm text-slate-500 dark:text-neutral-400 font-medium">Download full database backup</p>
-                    </div>
-                </button>
-
-                {/* Export SQLite (.db) */}
-                <button
-                    onClick={() => window.location.href = `${api.API_URL}/export?format=db`}
-                    className="flex flex-col items-center justify-center gap-4 p-8 bg-white dark:bg-neutral-900 border-2 border-black dark:border-neutral-700 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[6px_6px_0px_0px_rgba(255,255,255,0.2)] hover:-translate-y-1 transition-all duration-200 group"
-                >
-                    <div className="w-16 h-16 bg-blue-50 dark:bg-neutral-800 rounded-2xl flex items-center justify-center border-2 border-blue-100 dark:border-neutral-700 group-hover:border-blue-200 dark:group-hover:border-neutral-600 transition-colors">
-                        <HardDrive size={32} className="text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div className="text-center">
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Export Data (.db)</h3>
-                        <p className="text-sm text-slate-500 dark:text-neutral-400 font-medium">Download Prisma .db format</p>
-                    </div>
-                </button>
-
-                {/* Export JSON */}
-                <button
-                    onClick={() => window.location.href = `${api.API_URL}/export/json`}
-                    className="flex flex-col items-center justify-center gap-4 p-8 bg-white dark:bg-neutral-900 border-2 border-black dark:border-neutral-700 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[6px_6px_0px_0px_rgba(255,255,255,0.2)] hover:-translate-y-1 transition-all duration-200 group"
-                >
-                    <div className="w-16 h-16 bg-emerald-50 dark:bg-neutral-800 rounded-2xl flex items-center justify-center border-2 border-emerald-100 dark:border-neutral-700 group-hover:border-emerald-200 dark:group-hover:border-neutral-600 transition-colors">
-                        <FileJson size={32} className="text-emerald-600 dark:text-emerald-400" />
-                    </div>
-                    <div className="text-center">
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Export Data (JSON)</h3>
-                        <p className="text-sm text-slate-500 dark:text-neutral-400 font-medium">Download drawings as JSON</p>
-                    </div>
-                </button>
-
-                {/* Import Data */}
-                <div className="relative">
-                    <input
-                        type="file"
-                        multiple
-                        accept=".sqlite,.db,.json,.excalidraw"
-                        className="hidden"
-                        id="settings-import-db"
-                        onChange={async (e) => {
-                            const files = Array.from(e.target.files || []);
-                            if (files.length === 0) return;
-
-                            // Handle Database Import (.sqlite or .db)
-                            const databaseFile = files.find(f => f.name.endsWith('.sqlite') || f.name.endsWith('.db'));
-                            if (databaseFile) {
-                                if (files.length > 1) {
-                                    setImportError({ isOpen: true, message: 'Please import database files separately from other files.' });
-                                    e.target.value = '';
-                                    return;
-                                }
-
-                                const formData = new FormData();
-                                formData.append('db', databaseFile);
-
-                                try {
-                                    const res = await fetch(`${api.API_URL}/import/sqlite/verify`, {
-                                        method: 'POST',
-                                        body: formData,
-                                    });
-
-                                    if (!res.ok) {
-                                        const errorData = await res.json();
-                                        setImportError({ isOpen: true, message: errorData.error || 'Invalid database file.' });
-                                        e.target.value = '';
-                                        return;
-                                    }
-
-                                    setImportConfirmation({ isOpen: true, file: databaseFile });
-                                } catch (err) {
-                                    console.error('Verification failed:', err);
-                                    setImportError({ isOpen: true, message: 'Failed to verify database file.' });
-                                }
-
-                                e.target.value = '';
-                                return;
-                            }
-
-                            // Handle Bulk Drawing Import
-                            const drawingFiles = files.filter(f => f.name.endsWith('.json') || f.name.endsWith('.excalidraw'));
-                            if (drawingFiles.length === 0) {
-                                setImportError({ isOpen: true, message: 'No supported files found.' });
-                                e.target.value = '';
-                                return;
-                            }
-
-                            const result = await importDrawings(drawingFiles, null, () => { });
-
-                            if (result.failed > 0) {
-                                setImportError({
-                                    isOpen: true,
-                                    message: `Import complete with errors.\nSuccess: ${result.success}\nFailed: ${result.failed}\nErrors:\n${result.errors.join('\n')}`
-                                });
-                            } else {
-                                setImportSuccess(true);
-                            }
-
-                            e.target.value = '';
-                        }}
-                    />
-                    <button
-                        onClick={() => document.getElementById('settings-import-db')?.click()}
-                        className="w-full h-full flex flex-col items-center justify-center gap-4 p-8 bg-white dark:bg-neutral-900 border-2 border-black dark:border-neutral-700 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[6px_6px_0px_0px_rgba(255,255,255,0.2)] hover:-translate-y-1 transition-all duration-200 group"
-                    >
-                        <div className="w-16 h-16 bg-blue-50 dark:bg-neutral-800 rounded-2xl flex items-center justify-center border-2 border-blue-100 dark:border-neutral-700 group-hover:border-blue-200 dark:group-hover:border-neutral-600 transition-colors">
-                            <Upload size={32} className="text-blue-600 dark:text-blue-400" />
-                        </div>
-                        <div className="text-center">
-                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Import Data</h3>
-                            <p className="text-sm text-slate-500 dark:text-neutral-400 font-medium">Import Database or Drawings</p>
-                        </div>
-
-                    </button>
-                </div>
-
-                {/* Version Info */}
-                <div className="flex flex-col items-center justify-center gap-4 p-8 bg-white dark:bg-neutral-900 border-2 border-black dark:border-neutral-700 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)]">
-                    <div className="w-16 h-16 bg-gray-50 dark:bg-neutral-800 rounded-2xl flex items-center justify-center border-2 border-gray-100 dark:border-neutral-700">
-                        <Info size={32} className="text-gray-600 dark:text-gray-400" />
-                    </div>
-                    <div className="text-center">
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Version Info</h3>
-                        <div className="text-sm text-slate-500 dark:text-neutral-400 font-medium flex flex-col items-center gap-1">
-                            <span className="text-base text-slate-900 dark:text-white">
-                                {appVersion}
-                            </span>
-                            {buildLabel && (
-                                <span className="text-xs uppercase tracking-wide text-red-500 dark:text-red-400">
-                                    {buildLabel}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Modals */}
-            <ConfirmModal
-                isOpen={importConfirmation.isOpen}
-                title="Import Database"
-                message="WARNING: This will overwrite your current database with the imported file. This action cannot be undone. Are you sure?"
-                confirmText="Import Database"
-                onConfirm={async () => {
-                    if (!importConfirmation.file) return;
-
-                    const formData = new FormData();
-                    formData.append('db', importConfirmation.file);
-
-                    try {
-                        const res = await fetch(`${api.API_URL}/import/sqlite`, {
-                            method: 'POST',
-                            body: formData,
-                        });
-
-                        if (!res.ok) {
-                            const errorData = await res.json();
-                            throw new Error(errorData.error || 'Import failed');
-                        }
-
-                        setImportConfirmation({ isOpen: false, file: null });
-                        setImportSuccess(true);
-                    } catch (err: any) {
-                        console.error(err);
-                        setImportError({ isOpen: true, message: `Failed to import database: ${err.message}` });
-                        setImportConfirmation({ isOpen: false, file: null });
-                    }
-                }}
-                onCancel={() => setImportConfirmation({ isOpen: false, file: null })}
-            />
-
-            <ConfirmModal
-                isOpen={importError.isOpen}
-                title="Import Failed"
-                message={importError.message}
-                confirmText="OK"
-                cancelText=""
-                showCancel={false}
-                isDangerous={false}
-                onConfirm={() => setImportError({ isOpen: false, message: '' })}
-                onCancel={() => setImportError({ isOpen: false, message: '' })}
-            />
-
-            <ConfirmModal
-                isOpen={importSuccess}
-                title="Import Successful"
-                message="Data imported successfully."
-                confirmText="OK"
-                showCancel={false}
-                isDangerous={false}
-                variant="success"
-                onConfirm={() => setImportSuccess(false)}
-                onCancel={() => setImportSuccess(false)}
-            />
-        </Layout >
+    fetchCollections();
+  }, []);
+  const COMPRESSION_ENABLED_KEY = "excalidash-image-compression";
+  const [imageCompression, setImageCompression] = useState<boolean>(() => {
+    const raw =
+      typeof window === "undefined"
+        ? null
+        : window.localStorage?.getItem?.(COMPRESSION_ENABLED_KEY);
+    return raw !== "false";
+  });
+  const toggleImageCompression = () => {
+    const next = !imageCompression;
+    try {
+      window.localStorage?.setItem?.(COMPRESSION_ENABLED_KEY, String(next));
+    } catch {
+      // Ignore unavailable storage in private/embedded contexts.
+    }
+    setImageCompression(next);
+  };
+  const checkForUpdates = async (channel: api.UpdateChannel) => {
+    setUpdateLoading(true);
+    setUpdateError(null);
+    try {
+      const info = await api.getUpdateInfo(channel);
+      setUpdateInfo(info);
+      try {
+        window.localStorage?.setItem?.(
+          `${UPDATE_INFO_KEY}:${channel}`,
+          JSON.stringify(info),
+        );
+      } catch {
+        // Ignore unavailable storage in private/embedded contexts.
+      }
+    } catch (err: unknown) {
+      let message = "Failed to check for updates";
+      if (api.isAxiosError(err)) {
+        message =
+          err.response?.data?.message || err.response?.data?.error || message;
+      }
+      setUpdateError(message);
+    } finally {
+      setUpdateLoading(false);
+    }
+  };
+  useEffect(() => {
+    void checkForUpdates(updateChannel);
+  }, []);
+  const setAuthEnabled = async (enabled: boolean) => {
+    setAuthToggleLoading(true);
+    setAuthToggleError(null);
+    try {
+      const response = await api.api.post<{
+        authEnabled: boolean;
+        bootstrapRequired?: boolean;
+      }>("/auth/auth-enabled", { enabled });
+      if (response.data.authEnabled) {
+        window.location.href = response.data.bootstrapRequired
+          ? "/register"
+          : "/login";
+        return;
+      }
+      window.location.reload();
+    } catch (err: unknown) {
+      let message = "Failed to update authentication setting";
+      if (api.isAxiosError(err)) {
+        message =
+          err.response?.data?.message || err.response?.data?.error || message;
+      }
+      setAuthToggleError(message);
+    } finally {
+      setAuthToggleLoading(false);
+    }
+  };
+  const confirmToggleAuthEnabled = () => {
+    if (authEnabled === null) return;
+    if (authToggleLoading) return;
+    setAuthToggleConfirm({ isOpen: true, nextEnabled: !authEnabled });
+  };
+  const exportBackup = async () => {
+    try {
+      const extQuery = backupExportExt === "excalidash.zip" ? "?ext=zip" : "";
+      const response = await api.api.get(`/export/excalidash${extQuery}`, {
+        responseType: "blob",
+      });
+      const blob = new Blob([response.data], { type: "application/zip" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const date = new Date().toISOString().split("T")[0];
+      link.download =
+        backupExportExt === "excalidash.zip"
+          ? `excalidash-backup-${date}.excalidash.zip`
+          : `excalidash-backup-${date}.excalidash`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      console.error("Backup export failed:", err);
+      setBackupImportError({
+        isOpen: true,
+        message: "Failed to export backup. Please try again.",
+      });
+    }
+  };
+  const verifyBackupFile = async (file: File) => {
+    setBackupImportLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("archive", file);
+      const response = await api.api.post<{
+        valid: boolean;
+        formatVersion: number;
+        exportedAt: string;
+        excalidashBackendVersion: string | null;
+        collections: number;
+        drawings: number;
+      }>("/import/excalidash/verify", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setBackupImportConfirmation({
+        isOpen: true,
+        file,
+        info: {
+          formatVersion: response.data.formatVersion,
+          exportedAt: response.data.exportedAt,
+          excalidashBackendVersion:
+            response.data.excalidashBackendVersion ?? null,
+          collections: response.data.collections,
+          drawings: response.data.drawings,
+        },
+      });
+    } catch (err: unknown) {
+      console.error("Backup verify failed:", err);
+      let message = "Failed to verify backup file.";
+      if (api.isAxiosError(err)) {
+        message =
+          err.response?.data?.message || err.response?.data?.error || message;
+      }
+      setBackupImportError({ isOpen: true, message });
+    } finally {
+      setBackupImportLoading(false);
+    }
+  };
+  const verifyLegacyDbFile = async (file: File) => {
+    setLegacyDbImportLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("db", file);
+      const response = await api.api.post<{
+        valid: boolean;
+        drawings: number;
+        collections: number;
+        latestMigration: string | null;
+        currentLatestMigration: string | null;
+      }>("/import/sqlite/legacy/verify", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setLegacyDbImportConfirmation({
+        isOpen: true,
+        file,
+        info: {
+          drawings: response.data.drawings,
+          collections: response.data.collections,
+          legacyLatestMigration: response.data.latestMigration ?? null,
+          currentLatestMigration: response.data.currentLatestMigration ?? null,
+        },
+      });
+    } catch (err: unknown) {
+      console.error("Legacy DB verify failed:", err);
+      let message = "Failed to verify legacy database file.";
+      if (api.isAxiosError(err)) {
+        message =
+          err.response?.data?.message || err.response?.data?.error || message;
+      }
+      setImportError({ isOpen: true, message });
+    } finally {
+      setLegacyDbImportLoading(false);
+    }
+  };
+  const handleCreateCollection = async (name: string) => {
+    await api.createCollection(name);
+    const newCollections = await api.getCollections();
+    setCollections(newCollections);
+  };
+  const handleEditCollection = async (id: string, name: string) => {
+    setCollections((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, name } : c)),
     );
+    await api.updateCollection(id, name);
+  };
+  const handleDeleteCollection = async (id: string) => {
+    setCollections((prev) => prev.filter((c) => c.id !== id));
+    await api.deleteCollection(id);
+  };
+  const handleSelectCollection = (id: string | null | undefined) => {
+    if (id === undefined) navigate("/");
+    else if (id === null) navigate("/collections?id=unorganized");
+    else navigate(`/collections?id=${id}`);
+  };
+  return (
+    <Layout
+      collections={collections}
+      selectedCollectionId="SETTINGS"
+      onSelectCollection={handleSelectCollection}
+      onCreateCollection={handleCreateCollection}
+      onEditCollection={handleEditCollection}
+      onDeleteCollection={handleDeleteCollection}
+    >
+      {" "}
+      <h1
+        className="text-3xl sm:text-4xl lg:text-5xl mb-6 lg:mb-8 text-slate-900 dark:text-white pl-1"
+        style={{ fontFamily: displayFontFamily }}
+      >
+        {" "}
+        Settings{" "}
+      </h1>{" "}
+      {authToggleError && (
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-xl">
+          {" "}
+          <p className="text-red-800 dark:text-red-200 font-medium">
+            {authToggleError}
+          </p>{" "}
+        </div>
+      )}{" "}
+      <SettingsMainGrid
+        backupExportExt={backupExportExt}
+        setBackupExportExt={setBackupExportExt}
+        exportBackup={exportBackup}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        imageCompression={imageCompression}
+        toggleImageCompression={toggleImageCompression}
+        updateChannel={updateChannel}
+        updateInfo={updateInfo}
+        updateLoading={updateLoading}
+        updateError={updateError}
+        onUpdateChannelChange={(next) => {
+          try {
+            window.localStorage?.setItem?.(UPDATE_CHANNEL_KEY, next);
+          } catch {
+            // Ignore unavailable storage in private/embedded contexts.
+          }
+          setUpdateChannel(next);
+          void checkForUpdates(next);
+        }}
+        onCheckForUpdates={() => void checkForUpdates(updateChannel)}
+      />{" "}
+      <AdvancedSettings
+        authEnabled={authEnabled}
+        authMode={authMode}
+        authToggleLoading={authToggleLoading}
+        backupImportLoading={backupImportLoading}
+        legacyDbImportLoading={legacyDbImportLoading}
+        isManagedAuthMode={isManagedAuthMode}
+        user={user}
+        appVersion={appVersion}
+        buildLabel={buildLabel}
+        verifyBackupFile={verifyBackupFile}
+        verifyLegacyDbFile={verifyLegacyDbFile}
+        confirmToggleAuthEnabled={confirmToggleAuthEnabled}
+        setImportError={setImportError}
+        setImportSuccess={setImportSuccess}
+      />{" "}
+      <SettingsConfirmModals
+        legacyDbImportConfirmation={legacyDbImportConfirmation}
+        setLegacyDbImportConfirmation={setLegacyDbImportConfirmation}
+        importError={importError}
+        setImportError={setImportError}
+        importSuccess={importSuccess}
+        setImportSuccess={setImportSuccess}
+        authToggleConfirm={authToggleConfirm}
+        setAuthToggleConfirm={setAuthToggleConfirm}
+        authDisableFinalConfirmOpen={authDisableFinalConfirmOpen}
+        setAuthDisableFinalConfirmOpen={setAuthDisableFinalConfirmOpen}
+        setAuthEnabled={setAuthEnabled}
+        backupImportConfirmation={backupImportConfirmation}
+        setBackupImportConfirmation={setBackupImportConfirmation}
+        backupImportSuccess={backupImportSuccess}
+        setBackupImportSuccess={setBackupImportSuccess}
+        backupImportError={backupImportError}
+        setBackupImportError={setBackupImportError}
+        setBackupImportLoading={setBackupImportLoading}
+      />{" "}
+    </Layout>
+  );
 };

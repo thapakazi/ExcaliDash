@@ -1,30 +1,49 @@
-# ExcaliDash v0.1.5
+# ExcaliDash v0.5.1
 
-Date: 2025-11-23
+Release date: 2026-06-21
 
-Compatibility: v0.1.x (Backward Compatible)
+## Key changes
 
-# Security
+- Add runtime-selectable Prisma provider support for SQLite and PostgreSQL deployments.
+- Add provider-specific migration handling for Docker startup and local Prisma workflows.
+- Add PostgreSQL compose/test coverage and health-check coverage for containerized deployments.
+- Preserve SQLite as the default deployment path while allowing `DATABASE_PROVIDER=postgresql`.
 
-- RCE: implemented strict Zod schema validation and input sanitization on file uploads; added path traversal guards to file handling logic
+## Upgrading
 
-- XSS: used DOMPurify for HTML sanitization; blocked execution-capable SVG attributes and enforces CSP headers.
+<details>
+<summary>Show upgrade steps</summary>
 
-- DoS: moved CPU-intensive operations to worker threads to prevent event loop blocking; request rate limiting (1,000 req/15 min per IP) and streaming for large files
+### Data safety checklist
 
-# Infras & Deployment
+- Back up the backend volume (`dev.db`, secrets, uploads, and S3 bucket data) before upgrading.
+- Let migrations run on startup (`RUN_MIGRATIONS=true`) for normal deploys.
+- If S3 is enabled, verify that existing object keys follow the canonical layout `{prefix}/{userId}/{drawingId}/{fileId}.{ext}`.
+- Run `docker compose -f docker-compose.prod.yml logs backend --tail=200` after rollout and verify startup/migration status.
 
-- non-root execution (uid 1001) in containers
-- migrated to multi-stage Docker builds
+### Recommended upgrade (Docker Hub compose)
 
-# Database
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
 
-- migrated to better-sqlite3, converted all DB interactions to non-blocking async operations and offloaded integrity checks to worker threads.
+### Pin images to this release (recommended for reproducible deploys)
 
-- implemented SQLite magic header validation; added automatic backup triggers preceding data import
+Edit `docker-compose.prod.yml` and pin the release tags:
 
-- input validation logic
+```yaml
+services:
+  backend:
+    image: zimengxiong/excalidash-backend:v0.5.1
+  frontend:
+    image: zimengxiong/excalidash-frontend:v0.5.1
+```
 
-# Frontend
+Example:
 
-- updated Settings UI to show version
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+</details>

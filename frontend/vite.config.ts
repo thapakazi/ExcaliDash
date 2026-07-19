@@ -15,26 +15,43 @@ try {
   console.warn("Unable to read VERSION file:", error);
 }
 
-if (
-  !process.env.VITE_APP_VERSION ||
-  process.env.VITE_APP_VERSION.trim().length === 0
-) {
-  process.env.VITE_APP_VERSION = versionFromFile;
-  if (!process.env.VITE_APP_BUILD_LABEL) {
-    process.env.VITE_APP_BUILD_LABEL = "local development build";
-  }
-}
+const appVersion = process.env.VITE_APP_VERSION?.trim() || versionFromFile;
+const buildLabel = process.env.VITE_APP_BUILD_LABEL?.trim() || "local development build";
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: {
-      "/api": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ""),
+export default defineConfig(({ command }) => {
+  const nodeEnv = process.env.NODE_ENV || (command === "build" ? "production" : "development");
+  const devBackendTarget = process.env.VITE_DEV_BACKEND_URL?.trim() || "http://localhost:8000";
+  const processEnvDefines = {
+    'process.env.IS_PREACT': JSON.stringify("false"),
+    'process.env.NODE_ENV': JSON.stringify(nodeEnv),
+  };
+
+  return {
+    plugins: [react()],
+    define: {
+      ...processEnvDefines,
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+      'import.meta.env.VITE_APP_BUILD_LABEL': JSON.stringify(buildLabel),
+    },
+    optimizeDeps: {
+      esbuildOptions: {
+        define: processEnvDefines,
+        target: "es2022",
       },
     },
-  },
+    server: {
+      proxy: {
+        "/api": {
+          target: devBackendTarget,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, ""),
+        },
+        "/socket.io": {
+          target: devBackendTarget,
+          changeOrigin: true,
+          ws: true,
+        },
+      },
+    },
+  };
 });

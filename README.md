@@ -1,6 +1,6 @@
-<img src="logoExcaliDash.png" alt="ExcaliDash Logo" width="80" height="88">
+<img src="readme-assets/logoExcaliDash.png" alt="ExcaliDash Logo" width="80" height="88">
 
-# ExcaliDash v0.1.7
+# ExcaliDash
 
 ![License](https://img.shields.io/github/license/zimengxiong/ExcaliDash)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
@@ -8,25 +8,16 @@
 
 A self-hosted dashboard and organizer for [Excalidraw](https://github.com/excalidraw/excalidraw) with live collaboration features.
 
-## Screenshots
-
-![](dashboard.png)
-
-![](demo.gif)
+![](readme-assets/demo.gif)
 
 ## Table of Contents
 
-- [Screenshots](#screenshots)
 - [Features](#features)
 - [Upgrading](#upgrading)
 - [Installation](#installation)
-  - [Docker Hub (Recommended)](#dockerhub-recommended)
-  - [Docker Build](#docker-build)
+  - [Quickstart](#quickstart)
+  - [Advanced](#advanced)
 - [Development](#development)
-  - [Clone the Repository](#clone-the-repository)
-  - [Frontend](#frontend)
-  - [Backend](#backend)
-  - [Project Structure](#project-structure)
 - [Credits](#credits)
 
 ## Features
@@ -34,35 +25,71 @@ A self-hosted dashboard and organizer for [Excalidraw](https://github.com/excali
 <details>
 <summary>Persistent storage for all your drawings</summary>
 
-![](dashboardLight.png)
+![](readme-assets/dashboard.png)
 
 </details>
 
 <details>
 <summary>Real time collaboration</summary>
 
-![](collabDemo.gif)
+![](readme-assets/collabDemo.gif)
 
 </details>
 
 <details>
+<summary>Version history and restore</summary>
+
+Automatically retain recent drawing snapshots, preview past versions from the editor, and restore a previous state when needed.
+
+</details>
+
+<details>
+<summary>(Optional) Multi User Authentication, OIDC Support</summary>
+
+### Sign in with OIDC
+
+![](readme-assets/signInOIDC.png)
+
+### Migration from v0.3
+
+![](readme-assets/migrationScreen.png)
+
+### Admin Bootstrap
+
+![](readme-assets/adminBootstrap.png)
+
+### Admin Dashboard
+
+![](readme-assets/adminDashboard.png)
+
+</details>
+
+<details>
+<summary>Scoped internal & external sharing</summary>
+
+![](readme-assets/scoped.png)
+
+</details>
+<details>
 <summary>Search your drawings</summary>
 
-![](searchPage.png)
+![](readme-assets/search.gif)
 
 </details>
 
 <details>
 <summary>Drag and drop drawings into collections</summary>
 
-![](collectionsPage.png)
+![](readme-assets/collections.gif)
 
 </details>
 
 <details>
-<summary>Export/import your drawings and databases for backup</summary>
+<summary>Export/import your drawings for backup</summary>
 
-![](settingsPage.png)
+### Excalidash uses a non-proprietary archival format that stores your drawings in plain .excalidraw format
+
+![](readme-assets/backupsImport.gif)
 
 </details>
 
@@ -70,23 +97,55 @@ A self-hosted dashboard and organizer for [Excalidraw](https://github.com/excali
 
 See [release notes](https://github.com/ZimengXiong/ExcaliDash/releases) for a specific release.
 
-</details>
+ExcaliDash includes an in-app update notifier that checks GitHub Releases. If your deployment must not make outbound network calls, disable it on the backend:
+
+```bash
+UPDATE_CHECK_OUTBOUND=false
+```
+
+## Docker Hub Upgrades
+
+If you deployed using `docker-compose.prod.yml` (Docker Hub images), upgrade by pulling the latest images and recreating containers:
+
+```bash
+docker compose -f docker-compose.prod.yml pull && \
+  docker compose -f docker-compose.prod.yml up -d
+```
+
+If you prefer a clean stop/start (more downtime, but simpler), you can do:
+
+```bash
+docker compose -f docker-compose.prod.yml down && \
+  docker compose -f docker-compose.prod.yml pull && \
+  docker compose -f docker-compose.prod.yml up -d
+```
+
+Notes:
+
+- Don’t add `-v` to `down` unless you intend to delete the persistent backend volume (your SQLite DB + secrets).
+- Only add `--remove-orphans` if you previously ran a different Compose file for the same project name and need to remove old/renamed services.
 
 # Installation
 
 > [!CAUTION]
-> NOT for production use. While attempts have been made at hardening (XSS/dompurify, CORS, rate-limiting, sanitization), they are inadequate for public deployment. Do not expose any ports. Currently lacking CSRF.
+> This is a BETA deployment and production-readiness depends on deployment controls:
+> use TLS, trusted reverse proxy, fixed secrets, backups, and endpoint rate limits.
 
 > [!CAUTION]
-> ExcaliDash is in BETA. Please backup your data regularly (e.g. with cron).
+> ExcaliDash is in BETA. Please backup your data regularly.
+
+## Quickstart
+
+Prereqs: Docker + Docker Compose v2.
+
+<details>
+<summary>Docker Hub (Recommended)</summary>
 
 ## Docker Hub (Recommended)
 
-[Install Docker](https://docs.docker.com/desktop/)
-
 ```bash
 # Download docker-compose.prod.yml
-curl -OL https://raw.githubusercontent.com/ZimengXiong/ExcaliDash/refs/heads/main/docker-compose.prod.yml
+curl -OL https://raw.githubusercontent.com/ZimengXiong/ExcaliDash/main/docker-compose.prod.yml
 
 # Pull images
 docker compose -f docker-compose.prod.yml pull
@@ -97,9 +156,16 @@ docker compose -f docker-compose.prod.yml up -d
 # Access the frontend at localhost:6767
 ```
 
-## Docker Build
+For single-container deployments, `JWT_SECRET` can be omitted and will be auto-generated and persisted in the backend volume on first start. For portability and most production deployments, set a fixed `JWT_SECRET` explicitly.
 
-[Install Docker](https://docs.docker.com/desktop/)
+By default, the provided Compose files set `TRUST_PROXY=false` for safer setup. Only set `TRUST_PROXY` to a positive hop count (for example, `1`) when requests always pass through a trusted reverse proxy that correctly sets forwarded headers.
+
+</details>
+
+<details>
+<summary>Docker Build</summary>
+
+## Docker Build
 
 ```bash
 # Clone the repository (recommended)
@@ -114,27 +180,24 @@ docker compose up -d
 # Access the frontend at localhost:6767
 ```
 
-### Reverse Proxy / Traefik Setups (Docker)
+</details>
 
-When running ExcaliDash behind Traefik, Nginx, or another reverse proxy, configure both containers so that API + WebSocket calls resolve correctly:
+## Advanced
 
-- `FRONTEND_URL` (backend) must match the public URL that users hit (e.g. `https://excalidash.example.com`). This controls CORS and Socket.IO origin checks.
-- `BACKEND_URL` (frontend) tells the Nginx container how to reach the backend from inside Docker/Kubernetes. Override it if your reverse proxy exposes the backend under a different hostname.
+The root README keeps the install path short. See
+[advanced deployment and operations](docs/DEPLOYMENT.md) for reverse proxy,
+auth/OIDC, database provider, offline, backup, password policy, and operational
+details.
 
-```yaml
-# docker-compose.yml example
-backend:
-  environment:
-    - FRONTEND_URL=https://excalidash.example.com
-frontend:
-  environment:
-    # For standard Docker Compose (default)
-    # - BACKEND_URL=backend:8000
-    # For Kubernetes, use the service DNS name:
-    - BACKEND_URL=excalidash-backend.default.svc.cluster.local:8000
-```
+For release-candidate validation across multiple local configurations, see the
+[configuration lab](docs/CONFIG_LAB.md).
 
 # Development
+
+For contributor workflow, `make dev` starts the app in local single-user mode so you can reproduce editor bugs without going through login/onboarding. Use `make dev-auth` if you need to test local auth or OIDC flows from your `backend/.env`.
+
+<details>
+<summary>Clone the Repository</summary>
 
 ## Clone the Repository
 
@@ -145,6 +208,11 @@ git clone git@github.com:ZimengXiong/ExcaliDash.git
 # or, clone with HTTPS
 # git clone https://github.com/ZimengXiong/ExcaliDash.git
 ```
+
+</details>
+
+<details>
+<summary>Frontend</summary>
 
 ## Frontend
 
@@ -157,6 +225,11 @@ cp .env.example .env
 
 npm run dev
 ```
+
+</details>
+
+<details>
+<summary>Backend</summary>
 
 ## Backend
 
@@ -174,30 +247,68 @@ npx prisma db push
 npm run dev
 ```
 
-## Project Structure
+</details>
 
+<details>
+<summary>Simulate Auth Onboarding (Development)</summary>
+
+### Simulate Auth Onboarding (Development)
+
+To simulate first-run authentication choice flows in local development:
+
+```bash
+cd ExcaliDash/backend
+
+# Preview what would change (no data modifications)
+npm run dev:simulate-auth-onboarding:dry-run
+
+# Simulate "fresh install" onboarding state
+# (wipes drawings/collections/libraries and removes non-bootstrap users)
+npm run dev:simulate-auth-onboarding:fresh
+
+# Simulate "migration" onboarding state (ensures legacy data exists)
+npm run dev:simulate-auth-onboarding:migration
 ```
-ExcaliDash/
-├── backend/                 # Node.js + Express + Prisma
-│   ├── src/
-│   │   └── index.ts        # Main server file
-│   ├── prisma/
-│   │   ├── schema.prisma   # Database schema
-│   │   └── dev.db         # SQLite database
-│   └── package.json
-├── frontend/               # React + TypeScript + Vite
-│   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── pages/         # Page components
-│   │   ├── hooks/         # Custom hooks
-│   │   └── api/           # API client
-│   └── package.json
-└── README.md
+
+After running a simulation while the backend is already running, wait about 5 seconds
+(auth mode cache TTL) or restart the backend before refreshing the UI.
+
+</details>
+
+<details>
+<summary>Setup and Operational Scripts</summary>
+
+### Setup and Operational Scripts
+
+In `backend/package.json` there are helper scripts for maintenance:
+
+| Script          | Purpose                                    |
+| --------------- | ------------------------------------------ |
+| `admin:recover` | Emergency admin credential recovery/reset. |
+
+Admin recovery example:
+
+```bash
+cd backend
+npm run admin:recover -- --identifier admin@example.com --generate --activate --must-reset
 ```
+
+Common flags:
+
+| Flag                          | Description                                              |
+| ----------------------------- | -------------------------------------------------------- |
+| `--password "<new-password>"` | Set explicit new password.                               |
+| `--generate`                  | Generate a secure random password.                       |
+| `--activate`                  | Activate the admin account immediately.                  |
+| `--promote`                   | Promote user to admin role.                              |
+| `--must-reset`                | Force password reset on first login.                     |
+| `--disable-login-rate-limit`  | Temporarily disable login throttling for this operation. |
+
+</details>
 
 # Credits
-
+If you find ExcaliDash useful, please consider [sponsoring](https://github.com/sponsors/ZimengXiong)
 - Example designs from:
-  - https://github.com/Prakash-sa/system-design-ultimatum/tree/main
-  - https://github.com/kitsteam/excalidraw-examples/tree/main
-- [The Amazing work of Excalidraw developers](https://www.npmjs.com/package/@excalidraw/excalidraw)
+  - <https://github.com/Prakash-sa/system-design-ultimatum/tree/main>
+  - <https://github.com/kitsteam/excalidraw-examples/tree/main>
+- [The amazing work of Excalidraw & contributors](https://www.npmjs.com/package/@excalidraw/excalidraw)

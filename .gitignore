@@ -4,7 +4,31 @@ backend/node_modules
 
 # Database
 backend/prisma/*.db
+backend/prisma/**/*.db
+backend/prisma/*.db-journal
+backend/prisma/**/*.db-journal
 backend/prisma/dev.db
+backend/prisma/e2e-test.db
+backend/prisma/*.backup
+
+# SQLite artifacts anywhere (avoid committing dev DBs)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.db.backup
+
+# Docker-entrypoint persisted secrets/locks (in case prisma volume is bind-mounted)
+backend/prisma/.jwt_secret
+backend/prisma/.csrf_secret
+backend/prisma/.migration-lock/
+
+# Local OIDC/Keycloak dev files
+docker-compose.oidc.local.yml
+ops/keycloak/realm-excalidash-local.json
+
+# Uploads
+backend/uploads/
 
 # Generated files
 backend/src/generated/
@@ -19,6 +43,32 @@ backend/src/generated/
 frontend/dist/
 frontend/build/
 backend/dist/
+
+# Generated Excalidraw assets (copied from node_modules for runtime)
+frontend/public/excalidraw-assets/
+frontend/public/excalidraw-assets-dev/
+frontend/public/fonts/
+
+# E2E Testing
+e2e/node_modules/
+e2e/test-results/
+e2e/test-results-user/
+e2e/playwright-report/
+e2e/playwright-report-user/
+e2e/.playwright/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Test artifacts (in case they appear in other locations)
+**/playwright-report/
+**/test-results/
+**/playwright/.cache/
+
+# Docker volumes (if any temporary ones are created)
+docker-volumes/
 
 # Logs
 *.log
@@ -36,6 +86,13 @@ pids
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov
+
+# Vitest cache
+.vitest/
+
+# Playwright screenshots/videos on failure
+**/screenshots/
+**/videos/
 
 # Dependency directories
 jspm_packages/
