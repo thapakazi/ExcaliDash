@@ -119,11 +119,10 @@ const pruneOldBackups = async (backupDir: string, retentionDays: number): Promis
 };
 
 export const createSqliteBackup = async ({
-  prisma,
   databaseUrl,
   backupDir,
   retentionDays,
-}: Omit<BackupSchedulerOptions, "schedule">): Promise<string | null> => {
+}: Omit<BackupSchedulerOptions, "schedule" | "prisma">): Promise<string | null> => {
   const databasePath = parseDatabasePath(databaseUrl);
   if (!databasePath) {
     console.warn("[backup] Scheduled backups currently support SQLite file: DATABASE_URL values only.");
@@ -133,11 +132,18 @@ export const createSqliteBackup = async ({
   // Backups contain a full copy of the database (password hashes, API-key
   // hashes, OIDC secrets), so restrict the directory and files to the owner.
   await fs.promises.mkdir(backupDir, { recursive: true, mode: 0o700 });
-  await prisma.$executeRawUnsafe("PRAGMA wal_checkpoint(PASSIVE)");
 
   const target = path.join(backupDir, `excalidash-sqlite-${timestampForFilename(new Date())}.db`);
-  const source = new Database(databasePath, { readonly: true, fileMustExist: true });
+  // Use better-sqlite3 for the whole operation. SQLite's online backup API
+  // (source.backup) copies a consistent snapshot that already includes
+  // committed WAL data, so the copy is complete on its own. We run a PASSIVE
+  // checkpoint first only to keep the WAL file compact — it never blocks and
+  // never fails. This deliberately avoids Prisma's raw APIs: PRAGMA
+  // wal_checkpoint returns a row, which prisma.$executeRaw*/$queryRaw* reject
+  // under SQLite ("Execute returned results, which is not allowed in SQLite").
+  const source = new Database(databasePath, { fileMustExist: true });
   try {
+    source.pragma("wal_checkpoint(PASSIVE)");
     await source.backup(target);
   } finally {
     source.close();

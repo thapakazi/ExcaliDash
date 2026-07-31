@@ -1,6 +1,8 @@
 services:
   backend:
-    image: zimengxiong/excalidash-backend:latest
+    # image: zimengxiong/excalidash-backend:0.6.0-dev
+    build:
+      context: ./backend
     container_name: excalidash-backend
     environment:
       - DATABASE_PROVIDER=sqlite
@@ -15,6 +17,13 @@ services:
       # Recommended to set explicitly for portability and multi-instance setups.
       - JWT_SECRET=${JWT_SECRET}
       - CSRF_SECRET=${CSRF_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL}
+      # Native scheduled SQLite backups: the backend takes a consistent snapshot
+      # (SQLite online-backup API) on this cron schedule and prunes by retention.
+      # The backup-cron service versions the newest snapshot off-site in git.
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-*/5 * * * *}
+      - BACKUP_DIR=/app/backups
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-14}
       # Optional OIDC settings (required for AUTH_MODE=hybrid or oidc_enforced)
       # - OIDC_PROVIDER_NAME=Authentik
       # - OIDC_ISSUER_URL=https://auth.example.com/application/o/excalidash/
@@ -23,6 +32,7 @@ services:
       # - OIDC_REDIRECT_URI=https://excalidash.example.com/api/auth/oidc/callback
     volumes:
       - backend-data:/app/prisma
+      - backup-snapshots:/app/backups
     networks:
       - excalidash-network
     restart: unless-stopped
@@ -40,7 +50,8 @@ services:
       retries: 3
 
   frontend:
-    image: zimengxiong/excalidash-frontend:latest
+    image: zimengxiong/excalidash-frontend:0.6.0-dev
+
     container_name: excalidash-frontend
     ports:
       - "6767:80"
@@ -71,16 +82,18 @@ services:
     environment:
       - GITHUB_OAUTH_TOKEN=${GITHUB_OAUTH_TOKEN}
       - GITHUB_REPO=${GITHUB_REPO}
-      - BACKUP_ENDPOINT=${BACKUP_ENDPOINT:-http://frontend:80/api/export/json}
-      - DB_BACKUP_ENDPOINT=${DB_BACKUP_ENDPOINT:-http://frontend:80/api/export}
+      # Read the backend's native snapshots from the shared volume (mounted below).
+      - SNAPSHOT_DIR=/snapshots
       - BACKUP_TAG=${BACKUP_TAG:-}
       - CRON_SCHEDULE=${CRON_SCHEDULE:-*/5 * * * *}
     depends_on:
-      - frontend
+      - backend
     networks:
       - excalidash-network
     volumes:
       - backup-cron-data:/var/log
+      # Backend writes SQLite snapshots here; the cron container only reads them.
+      - backup-snapshots:/snapshots:ro
     restart: unless-stopped
 
 networks:
@@ -90,3 +103,5 @@ networks:
 volumes:
   backend-data:
   backup-cron-data:
+  # Shared between backend (writer) and backup-cron (reader) for DB snapshots.
+  backup-snapshots:

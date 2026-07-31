@@ -88,8 +88,12 @@ cp -r /app/src/generated/* /app/dist/generated/
 
 # 2. Fix permissions unconditionally (Running as root)
 echo "Fixing filesystem permissions..."
-chown -R nodejs:nodejs /app/uploads /app/prisma /app/dist/generated
+# BACKUP_DIR is a named volume mounted here; Docker creates it root-owned, so
+# create and hand it to nodejs or scheduled backups fail with SQLITE_CANTOPEN.
+mkdir -p /app/backups
+chown -R nodejs:nodejs /app/uploads /app/prisma /app/dist/generated /app/backups
 chmod 755 /app/uploads
+chmod 700 /app/backups
 chmod -R 755 /app/dist/generated
 chmod 600 "${JWT_SECRET_FILE}"
 chmod 600 "${CSRF_SECRET_FILE}"
